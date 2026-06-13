@@ -1,0 +1,30 @@
+{
+  "name": "process-insurance-claims",
+  "version": "1.0.0",
+  "description": "Insurance claims processing system",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "test": "jest --runInBand --forceExit",
+    "test:watch": "jest --watch --runInBand"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "mongoose": "^8.0.3",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "mongodb-memory-server": "^9.1.6",
+    "nodemon": "^3.0.2",
+    "supertest": "^6.3.4"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "globalSetup": "./tests/setup.js",
+    "globalTeardown": "./tests/teardown.js",
+    "testTimeout": 30000
+  }
+}
