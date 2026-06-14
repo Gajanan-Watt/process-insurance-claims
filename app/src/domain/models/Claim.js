@@ -31,7 +31,7 @@ const claimSchema = new mongoose.Schema({
   dateOfService: { type: Date, required: true },
   submittedAt: { type: Date, default: Date.now },
   providerId: { type: String },
-  providerName: { type: String },
+  providerName: { type: String, required: true },
   diagnosisCodes: [String],
   status: { type: String, enum: CLAIM_STATUSES, default: 'SUBMITTED' },
   items: { type: [claimItemSchema], required: true, validate: v => v.length > 0 },

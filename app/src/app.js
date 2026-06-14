@@ -21,18 +21,22 @@ app.use(cors({
 app.use(express.json());
 
 // Wire up event bus subscribers — structured JSON to stdout so log aggregators can ingest them.
-// Key lifecycle events only; per-item decision events are captured in the ClaimDecision collection.
 const eventBus = require('./domain/events/eventBus');
 const EVENTS = require('./domain/events/events');
 
 const LOGGED_EVENTS = [
   EVENTS.CLAIM_SUBMITTED,
+  EVENTS.CLAIM_REVIEW_STARTED,
   EVENTS.CLAIM_ADJUDICATED,
   EVENTS.CLAIM_PAID,
   EVENTS.CLAIM_REPROCESSED,
+  EVENTS.ITEM_DECISION_MADE,
+  EVENTS.DECISION_SUPERSEDED,
+  EVENTS.BENEFIT_LIMIT_CONSUMED,
+  EVENTS.BENEFIT_LIMIT_RELEASED,
+  EVENTS.BENEFIT_LIMIT_EXHAUSTED,
   EVENTS.DISPUTE_FILED,
-  EVENTS.DISPUTE_RESOLVED,
-  EVENTS.BENEFIT_LIMIT_EXHAUSTED
+  EVENTS.DISPUTE_RESOLVED
 ];
 
 for (const event of LOGGED_EVENTS) {

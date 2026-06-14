@@ -25,9 +25,9 @@ describe('GET /claims', () => {
     const { member: other, policy: otherPolicy } = await seedMemberWithPolicy();
 
     await request(app).post('/claims').set('Authorization', adminAuth)
-      .send({ memberId: member._id.toString(), policyId: policy._id.toString(), dateOfService: '2024-06-01', items: [{ serviceType: 'OFFICE_VISIT', benefitCategory: 'MEDICAL', billedAmount: 200 }] });
+      .send({ memberId: member._id.toString(), policyId: policy._id.toString(), dateOfService: '2024-06-01', providerName: 'City Clinic', items: [{ serviceType: 'OFFICE_VISIT', benefitCategory: 'MEDICAL', billedAmount: 200 }] });
     await request(app).post('/claims').set('Authorization', adminAuth)
-      .send({ memberId: other._id.toString(), policyId: otherPolicy._id.toString(), dateOfService: '2024-06-01', items: [{ serviceType: 'OFFICE_VISIT', benefitCategory: 'MEDICAL', billedAmount: 300 }] });
+      .send({ memberId: other._id.toString(), policyId: otherPolicy._id.toString(), dateOfService: '2024-06-01', providerName: 'City Clinic', items: [{ serviceType: 'OFFICE_VISIT', benefitCategory: 'MEDICAL', billedAmount: 300 }] });
 
     const res = await request(app)
       .get('/claims')
@@ -40,7 +40,7 @@ describe('GET /claims', () => {
   it('admin can filter by status', async () => {
     const { member, policy } = await seedMemberWithPolicy();
     const createRes = await request(app).post('/claims').set('Authorization', adminAuth)
-      .send({ memberId: member._id.toString(), policyId: policy._id.toString(), dateOfService: '2024-06-01', items: [{ serviceType: 'OFFICE_VISIT', benefitCategory: 'MEDICAL', billedAmount: 200 }] });
+      .send({ memberId: member._id.toString(), policyId: policy._id.toString(), dateOfService: '2024-06-01', providerName: 'City Clinic', items: [{ serviceType: 'OFFICE_VISIT', benefitCategory: 'MEDICAL', billedAmount: 200 }] });
     await request(app).post(`/claims/${createRes.body._id}/review`).set('Authorization', adminAuth);
 
     const submitted = await request(app).get('/claims?status=SUBMITTED').set('Authorization', adminAuth);
@@ -94,6 +94,7 @@ describe('POST /claims', () => {
         memberId: member._id.toString(),
         policyId: policy._id.toString(),
         dateOfService: '2024-06-01',
+        providerName: 'City Clinic',
         items: []
       });
     expect(res.status).toBe(400);
@@ -109,6 +110,7 @@ describe('POST /claims', () => {
         memberId: otherMember._id.toString(),
         policyId: policy._id.toString(),  // belongs to `member`, not `otherMember`
         dateOfService: '2024-06-01',
+        providerName: 'City Clinic',
         items: [{ serviceType: 'OFFICE_VISIT', benefitCategory: 'MEDICAL', billedAmount: 500 }]
       });
     expect(res.status).toBe(403);
@@ -125,6 +127,7 @@ describe('POST /claims/:id/review', () => {
         memberId: member._id.toString(),
         policyId: policy._id.toString(),
         dateOfService: '2024-06-01',
+        providerName: 'City Clinic',
         items: [{ serviceType: 'OFFICE_VISIT', benefitCategory: 'MEDICAL', billedAmount: 1000 }]
       });
 
@@ -144,6 +147,7 @@ describe('POST /claims/:id/review', () => {
         memberId: member._id.toString(),
         policyId: policy._id.toString(),
         dateOfService: '2024-06-01',
+        providerName: 'City Clinic',
         items: [{ serviceType: 'OFFICE_VISIT', benefitCategory: 'MEDICAL', billedAmount: 300 }]
       });
     const id = createRes.body._id;
@@ -166,6 +170,7 @@ describe('GET /claims/:id', () => {
         memberId: member._id.toString(),
         policyId: policy._id.toString(),
         dateOfService: '2024-06-01',
+        providerName: 'City Clinic',
         items: [{ serviceType: 'OFFICE_VISIT', benefitCategory: 'MEDICAL', billedAmount: 800 }]
       });
     const id = createRes.body._id;
@@ -200,6 +205,7 @@ describe('GET /claims/:id', () => {
         memberId: member._id.toString(),
         policyId: policy._id.toString(),
         dateOfService: '2024-06-01',
+        providerName: 'City Clinic',
         items: [{ serviceType: 'OFFICE_VISIT', benefitCategory: 'MEDICAL', billedAmount: 300 }]
       });
 
@@ -220,6 +226,7 @@ describe('POST /claims/:id/dispute → resolve', () => {
         memberId: member._id.toString(),
         policyId: policy._id.toString(),
         dateOfService: '2024-06-01',
+        providerName: 'City Clinic',
         items: [{ serviceType: 'OFFICE_VISIT', benefitCategory: 'MEDICAL', billedAmount: 800 }]
       });
     const id = createRes.body._id;
@@ -249,6 +256,7 @@ describe('POST /claims/:id/dispute → resolve', () => {
         memberId: member._id.toString(),
         policyId: policy._id.toString(),
         dateOfService: '2024-06-01',
+        providerName: 'City Clinic',
         items: [{ serviceType: 'OFFICE_VISIT', benefitCategory: 'MEDICAL', billedAmount: 800 }]
       });
     const id = createRes.body._id;
@@ -284,6 +292,7 @@ describe('POST /claims/:id/dispute → /reprocess (legacy flow)', () => {
         memberId: member._id.toString(),
         policyId: policy._id.toString(),
         dateOfService: '2024-06-01',
+        providerName: 'City Clinic',
         items: [{ serviceType: 'OFFICE_VISIT', benefitCategory: 'MEDICAL', billedAmount: 800 }]
       });
     const id = createRes.body._id;
@@ -323,6 +332,7 @@ describe('POST /claims/:id/pay', () => {
         memberId: member._id.toString(),
         policyId: policy._id.toString(),
         dateOfService: '2024-06-01',
+        providerName: 'City Clinic',
         items: [{ serviceType: 'OFFICE_VISIT', benefitCategory: 'MEDICAL', billedAmount: 500 }]
       });
     const id = createRes.body._id;
@@ -344,6 +354,7 @@ describe('POST /claims/:id/pay', () => {
         memberId: member._id.toString(),
         policyId: policy._id.toString(),
         dateOfService: '2024-06-01',
+        providerName: 'City Clinic',
         items: [{ serviceType: 'OFFICE_VISIT', benefitCategory: 'MEDICAL', billedAmount: 200 }]
       });
     const payRes = await request(app)
@@ -367,6 +378,7 @@ describe('POST /claims/:id/items/:itemId/adjudicate', () => {
         memberId: member._id.toString(),
         policyId: policy._id.toString(),
         dateOfService: '2024-06-01',
+        providerName: 'City Clinic',
         items: [{ serviceType: 'SURGERY', benefitCategory: 'MEDICAL', billedAmount: 5000 }]
       });
     const id = createRes.body._id;
