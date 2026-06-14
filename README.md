@@ -14,59 +14,57 @@ A REST API for adjudicating health insurance claims against coverage rules.
 ### Prerequisites
 
 - Node.js 18+
-- MongoDB 6+ running locally (replica set required for transactions)
+- Docker (for the local MongoDB replica set) or a MongoDB 6+ replica set already running
 
-### Start a local MongoDB replica set
+### 1. Start a local MongoDB replica set
 
-If you don't already have one:
+Transactions require a replica set. The quickest way is Docker:
+
 ```bash
-mongod --replSet rs0 --dbpath /tmp/mongodb --port 27017 --fork --logpath /tmp/mongod.log
-mongosh --eval "rs.initiate()"
+docker run -d --name mongo-rs -p 27017:27017 mongo:7 mongod --replSet rs0 --bind_ip_all
+sleep 3   # wait for mongod to be ready before initiating
+docker exec mongo-rs mongosh --quiet --eval \
+  "rs.initiate({_id:'rs0', members:[{_id:0, host:'localhost:27017'}]})"
 ```
 
-Or use Docker:
-```bash
-docker run -d -p 27017:27017 --name mongo-rs mongo:7 --replSet rs0
-docker exec mongo-rs mongosh --eval "rs.initiate()"
-```
+You should see `{ ok: 1 }`. If you get a connection error, wait another second and retry the `rs.initiate` step.
 
-### Install and run
+### 2. Install dependencies and start the server
 
 ```bash
 cd app
-cp .env.example .env
 npm install
 npm start
 ```
 
-Server starts on `http://localhost:3000`.
+The `.env` file is included — no extra config needed. Server starts on `http://localhost:3000`.
 
-### Generate a token for manual testing
+### 3. Run the test suite
 
-All endpoints require a `Bearer` JWT. To mint a short-lived admin token for local testing:
-
-```bash
-node -e "
-  const jwt = require('jsonwebtoken');
-  require('dotenv').config({ path: './.env' });
-  console.log(jwt.sign({ sub: 'local-admin', role: 'ADMIN' }, process.env.JWT_SECRET, { expiresIn: '1d' }));
-"
-```
-
-Export it so you can paste it into the curl examples below:
-
-```bash
-export TOKEN=<paste token here>
-```
-
-### Run tests
+The tests use an in-memory MongoDB replica set — no running database needed:
 
 ```bash
 cd app
 npm test
 ```
 
-Tests spin up an in-memory MongoDB replica set automatically — no external database needed.
+All 38 tests should pass.
+
+### 4. Generate a token for manual API testing
+
+All endpoints require a `Bearer` JWT. Run this from the `app/` directory to mint an admin token and export it for use in the curl examples:
+
+```bash
+export TOKEN=$(node -e "
+  const jwt = require('jsonwebtoken');
+  require('dotenv').config();
+  console.log(jwt.sign({ sub: 'local-admin', role: 'ADMIN' }, process.env.JWT_SECRET, { expiresIn: '1d' }));
+")
+```
+
+`ADMIN` can call every endpoint in the walkthrough below. `TOKEN` is session-scoped — if you open a new terminal window, re-run this export.
+
+---
 
 ## API Reference
 
@@ -100,25 +98,29 @@ Tests spin up an in-memory MongoDB replica set automatically — no external dat
 | `POST` | `/claims/:id/items/:itemId/adjudicate` | ADJUSTER, ADMIN | Manually adjudicate a NEEDS_REVIEW item |
 | `POST` | `/claims/:id/reprocess` | ADJUSTER, ADMIN | Re-adjudicate (appeal / rule correction) |
 
+---
+
 ## Walkthrough
+
+Each step uses `$TOKEN` exported above. Replace `<memberId>`, `<policyId>`, and `<claimId>` with the `_id` values returned in each response.
 
 ### 1. Create a member and policy
 
 ```bash
-# Create member
-curl -X POST http://localhost:3000/members \
+# Create member — note the _id in the response
+curl -s -X POST http://localhost:3000/members \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
-  -d '{"name":"Jane Doe","dateOfBirth":"1985-03-15","memberId":"MBR-001"}'
+  -d '{"name":"Jane Doe","dateOfBirth":"1985-03-15","memberId":"MBR-001"}' | jq .
 
-# Create policy (use memberId from above)
-curl -X POST http://localhost:3000/policies \
+# Create policy — note the _id in the response
+curl -s -X POST http://localhost:3000/policies \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
-  -d '{"memberId":"<memberId>","planType":"STANDARD","effectiveDate":"2024-01-01"}'
+  -d '{"memberId":"<memberId>","planType":"STANDARD","effectiveDate":"2024-01-01"}' | jq .
 
-# Add coverage rules (use policyId from above)
-curl -X POST http://localhost:3000/policies/<policyId>/versions \
+# Add coverage rules to the policy
+curl -s -X POST http://localhost:3000/policies/<policyId>/versions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -139,14 +141,14 @@ curl -X POST http://localhost:3000/policies/<policyId>/versions \
         "annualDeductible": 0
       }
     ]
-  }'
+  }' | jq .
 ```
 
 ### 2. Submit and adjudicate a claim
 
 ```bash
-# Submit claim (use a MEMBER-role token so ownership is enforced)
-curl -X POST http://localhost:3000/claims \
+# Submit claim — note the _id in the response
+curl -s -X POST http://localhost:3000/claims \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -159,42 +161,42 @@ curl -X POST http://localhost:3000/claims \
       {"serviceType":"OFFICE_VISIT","benefitCategory":"MEDICAL","billedAmount":1200,"description":"Annual checkup"},
       {"serviceType":"CLEANING","benefitCategory":"DENTAL","billedAmount":300,"description":"Dental cleaning"}
     ]
-  }'
+  }' | jq .
 
-# Adjudicate (ADJUSTER or ADMIN token required)
-curl -X POST http://localhost:3000/claims/<claimId>/review \
-  -H "Authorization: Bearer $TOKEN"
+# Adjudicate — runs the rules engine against the claim
+curl -s -X POST http://localhost:3000/claims/<claimId>/review \
+  -H "Authorization: Bearer $TOKEN" | jq .
 
-# Read the decision with explanation (diagnosisCodes stripped for non-clinical roles)
-curl http://localhost:3000/claims/<claimId> \
-  -H "Authorization: Bearer $TOKEN"
+# Read the adjudicated claim and its decisions (with member-facing explanations)
+curl -s http://localhost:3000/claims/<claimId> \
+  -H "Authorization: Bearer $TOKEN" | jq .
 ```
 
-### 3. Dispute and reprocess
+### 3. Dispute and resolve
 
 ```bash
-# Member disputes (use a MEMBER-role token)
-curl -X POST http://localhost:3000/claims/<claimId>/dispute \
+# File a dispute
+curl -s -X POST http://localhost:3000/claims/<claimId>/dispute \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
-  -d '{"reason":"Deductible was already met — request re-review"}'
+  -d '{"reason":"Deductible was already met — request re-review"}' | jq .
 
-# Adjuster resolves the dispute (UPHELD keeps original; REVERSED auto-reprocesses)
-curl -X POST http://localhost:3000/claims/<claimId>/dispute/resolve \
+# Resolve the dispute — REVERSED auto-reprocesses and creates superseding decisions
+curl -s -X POST http://localhost:3000/claims/<claimId>/dispute/resolve \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
-  -d '{"decision":"REVERSED","resolution":"Error in deductible application identified."}'
+  -d '{"decision":"REVERSED","resolution":"Error in deductible application identified."}' | jq .
 
-# See the full decision history including superseded decisions (ADJUSTER/ADMIN/AUDITOR only)
-curl http://localhost:3000/claims/<claimId>/decisions \
-  -H "Authorization: Bearer $TOKEN"
+# See the full decision history including the superseded original
+curl -s http://localhost:3000/claims/<claimId>/decisions \
+  -H "Authorization: Bearer $TOKEN" | jq .
 ```
 
 ### 4. Mid-year rule change
 
 ```bash
-# Add a new policy version with updated rules (closes the old version automatically)
-curl -X POST http://localhost:3000/policies/<policyId>/versions \
+# Add a new policy version — automatically closes the previous version
+curl -s -X POST http://localhost:3000/policies/<policyId>/versions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{
@@ -203,8 +205,8 @@ curl -X POST http://localhost:3000/policies/<policyId>/versions \
     "coverageRules": [
       {"benefitCategory":"MEDICAL","serviceTypes":[],"coveredPercent":90,"annualLimit":15000,"annualDeductible":250}
     ]
-  }'
+  }' | jq .
 
-# Claims with dateOfService before July 1 still use the old rules
-# Claims with dateOfService from July 1 onward use the new rules
+# Claims with dateOfService before July 1 still adjudicate under the old rules.
+# Claims with dateOfService from July 1 onward use the new rules.
 ```
