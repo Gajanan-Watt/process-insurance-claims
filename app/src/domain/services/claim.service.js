@@ -4,7 +4,7 @@ const Claim = require('../models/Claim');
 const ClaimDecision = require('../models/ClaimDecision');
 const Dispute = require('../models/Dispute');
 const LimitLedger = require('../models/LimitLedger');
-const { adjudicateClaim } = require('./adjudication.service');
+const { adjudicateClaim, findPolicyVersion, findCoverageRule } = require('./adjudication.service');
 const limitService = require('./limit.service');
 const deductibleService = require('./deductible.service');
 const eventBus = require('../events/eventBus');
@@ -53,15 +53,25 @@ async function submitClaim(claimData) {
 }
 
 // Move to UNDER_REVIEW and run adjudication.
+// findOneAndUpdate is atomic — prevents two concurrent requests from both passing
+// the transition guard and double-adjudicating the same claim.
 async function reviewClaim(claimId, actorId) {
-  const claim = await Claim.findById(claimId);
-  if (!claim) throw Object.assign(new Error('Claim not found'), { statusCode: 404 });
-  assertTransition(claim.status, 'UNDER_REVIEW');
+  const prior = await Claim.findOneAndUpdate(
+    { _id: claimId, status: 'SUBMITTED' },
+    { $set: { status: 'UNDER_REVIEW' } },
+    { new: false }
+  );
 
-  claim.status = 'UNDER_REVIEW';
-  await claim.save();
+  if (!prior) {
+    const exists = await Claim.findById(claimId).lean();
+    if (!exists) throw Object.assign(new Error('Claim not found'), { statusCode: 404 });
+    throw Object.assign(
+      new Error(`Invalid transition: ${exists.status} → UNDER_REVIEW`),
+      { statusCode: 422 }
+    );
+  }
 
-  eventBus.emit(EVENTS.CLAIM_REVIEW_STARTED, { claimId: claim._id, actorId });
+  eventBus.emit(EVENTS.CLAIM_REVIEW_STARTED, { claimId: prior._id, actorId });
 
   return adjudicateClaim(claimId, 'INITIAL_SUBMISSION', actorId);
 }
@@ -176,7 +186,6 @@ async function adjudicateItem(claimId, itemId, { decision, approvedAmount, denia
         }
 
         // Load the active policy version to get annualLimit for this item's category.
-        const { findPolicyVersion, findCoverageRule } = require('./adjudication.service');
         const policyVersion = await findPolicyVersion(claim.policyId, claim.dateOfService, session);
         const rule = policyVersion && findCoverageRule(policyVersion, item);
         const annualLimit = rule?.annualLimit ?? approvedAmount;
@@ -235,14 +244,15 @@ async function adjudicateItem(claimId, itemId, { decision, approvedAmount, denia
       // Re-evaluate claim status now that this item has a final decision.
       const allStatuses = claim.items.map(i => i.status);
       const hasNeedsReview = allStatuses.includes('NEEDS_REVIEW');
-      const approvedCount = allStatuses.filter(s => ['APPROVED', 'PARTIALLY_APPROVED'].includes(s)).length;
+      const fullyApprovedCount = allStatuses.filter(s => s === 'APPROVED').length;
+      const partiallyApprovedCount = allStatuses.filter(s => s === 'PARTIALLY_APPROVED').length;
       const total = claim.items.length;
 
       if (hasNeedsReview) {
         claim.status = 'UNDER_REVIEW';
-      } else if (approvedCount === total) {
+      } else if (fullyApprovedCount === total) {
         claim.status = 'APPROVED';
-      } else if (approvedCount > 0) {
+      } else if (fullyApprovedCount > 0 || partiallyApprovedCount > 0) {
         claim.status = 'PARTIALLY_APPROVED';
       } else {
         claim.status = 'DENIED';

@@ -10,6 +10,46 @@ afterEach(clearCollections);
 const adminId = 'admin-actor-id';
 const adminAuth = authHeader(adminId, 'ADMIN');
 
+describe('GET /claims', () => {
+  it('returns empty array when member has no claims', async () => {
+    const { member } = await seedMemberWithPolicy();
+    const res = await request(app)
+      .get('/claims')
+      .set('Authorization', authHeader(member._id, 'MEMBER'));
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it('member sees only their own claims', async () => {
+    const { member, policy } = await seedMemberWithPolicy();
+    const { member: other, policy: otherPolicy } = await seedMemberWithPolicy();
+
+    await request(app).post('/claims').set('Authorization', adminAuth)
+      .send({ memberId: member._id.toString(), policyId: policy._id.toString(), dateOfService: '2024-06-01', items: [{ serviceType: 'OFFICE_VISIT', benefitCategory: 'MEDICAL', billedAmount: 200 }] });
+    await request(app).post('/claims').set('Authorization', adminAuth)
+      .send({ memberId: other._id.toString(), policyId: otherPolicy._id.toString(), dateOfService: '2024-06-01', items: [{ serviceType: 'OFFICE_VISIT', benefitCategory: 'MEDICAL', billedAmount: 300 }] });
+
+    const res = await request(app)
+      .get('/claims')
+      .set('Authorization', authHeader(member._id, 'MEMBER'));
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].memberId).toBe(member._id.toString());
+  });
+
+  it('admin can filter by status', async () => {
+    const { member, policy } = await seedMemberWithPolicy();
+    const createRes = await request(app).post('/claims').set('Authorization', adminAuth)
+      .send({ memberId: member._id.toString(), policyId: policy._id.toString(), dateOfService: '2024-06-01', items: [{ serviceType: 'OFFICE_VISIT', benefitCategory: 'MEDICAL', billedAmount: 200 }] });
+    await request(app).post(`/claims/${createRes.body._id}/review`).set('Authorization', adminAuth);
+
+    const submitted = await request(app).get('/claims?status=SUBMITTED').set('Authorization', adminAuth);
+    const approved = await request(app).get('/claims?status=APPROVED').set('Authorization', adminAuth);
+    expect(submitted.body).toHaveLength(0);
+    expect(approved.body).toHaveLength(1);
+  });
+});
+
 describe('POST /claims', () => {
   it('returns 400 for missing required fields', async () => {
     const res = await request(app)

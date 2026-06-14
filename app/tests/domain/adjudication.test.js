@@ -94,6 +94,26 @@ describe('adjudication: uncovered service', () => {
   });
 });
 
+describe('adjudication: claim status rollup', () => {
+  it('sets PARTIALLY_APPROVED when every item is limit-capped, not APPROVED', async () => {
+    const { member, policy } = await seedMemberWithPolicy({
+      coverageRules: [
+        { benefitCategory: 'MEDICAL', serviceTypes: [], coveredPercent: 100, annualLimit: 300, annualDeductible: 0 }
+      ]
+    });
+    // Single item billed at $500 but only $300 limit available — item is PARTIALLY_APPROVED.
+    const claim = await makeClaim(member._id, policy._id, [
+      { serviceType: 'OFFICE_VISIT', benefitCategory: 'MEDICAL', billedAmount: 500 }
+    ]);
+
+    const result = await adjudicateClaim(claim._id);
+
+    expect(result.claimStatus).toBe('PARTIALLY_APPROVED');
+    expect(result.decisions[0].decisionType).toBe('PARTIALLY_APPROVED');
+    expect(result.decisions[0].approvedAmount).toBe(300);
+  });
+});
+
 describe('adjudication: partial approval', () => {
   it('approves covered items and denies uncovered items, sets PARTIALLY_APPROVED', async () => {
     const { member, policy } = await seedMemberWithPolicy();
@@ -155,7 +175,8 @@ describe('adjudication: annual limit exhaustion', () => {
     ]);
     const result = await adjudicateClaim(claim2._id);
 
-    expect(result.claimStatus).toBe('APPROVED');
+    // $400 billed, only $200 remaining under the limit — item is limit-capped, so PARTIALLY_APPROVED.
+    expect(result.claimStatus).toBe('PARTIALLY_APPROVED');
     expect(result.decisions[0].approvedAmount).toBe(200);
   });
 });

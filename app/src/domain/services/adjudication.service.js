@@ -165,7 +165,8 @@ async function adjudicateClaim(claimId, triggeringEvent = 'INITIAL_SUBMISSION', 
       }
 
       const decisions = [];
-      let approvedCount = 0;
+      let fullyApprovedCount = 0;
+      let partiallyApprovedCount = 0;
       let deniedCount = 0;
       let needsReviewCount = 0;
 
@@ -347,15 +348,17 @@ async function adjudicateClaim(claimId, triggeringEvent = 'INITIAL_SUBMISSION', 
         });
         item.status = isPartial ? 'PARTIALLY_APPROVED' : 'APPROVED';
         decisions.push(d);
-        approvedCount++;
+        if (isPartial) partiallyApprovedCount++;
+        else fullyApprovedCount++;
       }
 
-      // NEEDS_REVIEW items keep the claim in UNDER_REVIEW regardless of other counts.
+      // NEEDS_REVIEW holds the claim open regardless of other item outcomes.
+      // APPROVED only when every item is fully approved — any limit-capped item → PARTIALLY_APPROVED.
       if (needsReviewCount > 0) {
         claim.status = 'UNDER_REVIEW';
-      } else if (approvedCount === claim.items.length) {
+      } else if (fullyApprovedCount === claim.items.length) {
         claim.status = 'APPROVED';
-      } else if (approvedCount > 0) {
+      } else if (fullyApprovedCount > 0 || partiallyApprovedCount > 0) {
         claim.status = 'PARTIALLY_APPROVED';
       } else {
         claim.status = 'DENIED';

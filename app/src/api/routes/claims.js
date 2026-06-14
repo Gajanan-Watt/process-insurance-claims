@@ -43,6 +43,34 @@ async function assertClaimOwnership(claim, actor) {
   }
 }
 
+// List claims — members see only their own; adjusters/admins can filter by memberId and/or status.
+// Results are capped at 50 until cursor-based pagination is added.
+router.get('/',
+  requireAuth,
+  phiReadLimiter,
+  async (req, res, next) => {
+    try {
+      const filter = {};
+
+      if (req.actor.role === 'MEMBER') {
+        filter.memberId = req.actor.id;
+      } else if (req.query.memberId) {
+        filter.memberId = req.query.memberId;
+      }
+
+      if (req.query.status) filter.status = req.query.status;
+
+      const claims = await Claim.find(filter)
+        .sort({ createdAt: -1 })
+        .limit(50);
+
+      res.json(claims.map(c => projectClaim(c, req.actor.role)));
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // Submit a new claim
 router.post('/',
   requireAuth,

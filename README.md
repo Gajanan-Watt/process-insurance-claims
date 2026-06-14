@@ -89,6 +89,7 @@ Tests spin up an in-memory MongoDB replica set automatically — no external dat
 
 | Method | Path | Roles | Description |
 |---|---|---|---|
+| `GET` | `/claims` | any | List claims (MEMBERs see own; filter by `?memberId=&status=`) |
 | `POST` | `/claims` | MEMBER, ADJUSTER, ADMIN | Submit a claim |
 | `GET` | `/claims/:id` | any | Get claim + current decisions (PHI filtered by role) |
 | `GET` | `/claims/:id/decisions` | ADJUSTER, ADMIN, AUDITOR | Full decision history (audit trail) |
