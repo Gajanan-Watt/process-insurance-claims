@@ -76,7 +76,7 @@ describe('reprocessing releases and re-consumes limits correctly', () => {
   it('releases old limit consumption before re-adjudicating', async () => {
     const { member, policy } = await seedMemberWithPolicy({
       coverageRules: [
-        { benefitCategory: 'MEDICAL', serviceTypes: [], coveredPercent: 100, annualLimit: 1000, deductible: 0 }
+        { benefitCategory: 'MEDICAL', serviceTypes: [], coveredPercent: 100, annualLimit: 1000, annualDeductible: 0 }
       ]
     });
 
