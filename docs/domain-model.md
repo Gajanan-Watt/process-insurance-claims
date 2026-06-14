@@ -13,12 +13,15 @@ A temporal snapshot of coverage rules for a Policy. When rules change, the old v
 
 **Coverage Rule (embedded in PolicyVersion)**
 ```
-benefitCategory  — MEDICAL | DENTAL | VISION | MENTAL_HEALTH | PRESCRIPTION
-serviceTypes     — CPT/service codes; empty array = applies to all types in category
-coveredPercent   — 0–100; applied to billed amount
-annualLimit      — calendar-year cap on consumption for this benefit category
-deductible       — subtracted from covered gross before final approved amount
-requiresPreAuth  — if true, claim is denied pending prior authorization
+benefitCategory      — MEDICAL | DENTAL | VISION | MENTAL_HEALTH | PRESCRIPTION
+serviceTypes         — CPT/service codes; empty array = applies to all types in category
+coveredPercent       — 0–100; applied to eligible amount after deductible
+annualLimit          — calendar-year cap on approved payouts for this benefit category
+annualDeductible     — member's annual out-of-pocket amount before coverage applies;
+                       tracked across all claims via DeductibleLedger (not per-claim)
+requiresPreAuth      — if true, claim is denied pending prior authorization
+requiresManualReview — if true, item routes to NEEDS_REVIEW for adjuster review
+                       instead of being auto-approved or auto-denied
 ```
 
 ### Claim
@@ -46,6 +49,13 @@ Available limit = `annualLimit - sum(CONSUME entries) + sum(RELEASE entries)`
 
 All CONSUME writes happen inside a MongoDB transaction. Two concurrent adjudications writing to the same ledger document will produce a write-write conflict; the second transaction retries and sees the first's consumption, preventing double-spending of the limit.
 
+### DeductibleLedger
+An append-only ledger tracking annual deductible consumption per `(policy, member, benefitCategory, calendar year)`. Entries are either APPLY (deductible charged against a claim item) or RELEASE (reversal during reprocessing).
+
+Applied deductible = `sum(APPLY entries) - sum(RELEASE entries)`, capped at `annualDeductible`.
+
+The adjudication engine calls this before computing coverage: `eligibleAmount = billedAmount - deductibleApplied`, then `approvedAmount = eligibleAmount × coveredPercent%`. Once a member's deductible is fully met for the year, subsequent claims in the same benefit category are processed at the full coverage percent with no deductible applied.
+
 ---
 
 ## Relationships
@@ -55,7 +65,9 @@ Member ──── Policy ──── PolicyVersion[]
               │
               └──── Claim[] ──── ClaimItem[] ──── ClaimDecision[]
               │                        │
-              └──── LimitLedger[]      └── (claimItemId links Decision to Item)
+              ├──── LimitLedger[]      └── (claimItemId links Decision to Item)
+              │
+              └──── DeductibleLedger[]   (per member+benefitCategory+year)
 ```
 
 ---
@@ -89,7 +101,7 @@ UNDER_REVIEW ──────────────────────�
 PENDING → APPROVED | DENIED | NEEDS_REVIEW
 ```
 
-`NEEDS_REVIEW` is reserved for future manual adjudication workflows (e.g., out-of-network claims requiring human review).
+`NEEDS_REVIEW` is set when the matching coverage rule has `requiresManualReview=true`. The item is held until an adjuster calls `POST /claims/:id/items/:itemId/adjudicate` to manually approve or deny it. The claim stays in `UNDER_REVIEW` until all NEEDS_REVIEW items are resolved.
 
 ---
 

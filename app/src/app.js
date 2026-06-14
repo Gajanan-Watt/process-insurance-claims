@@ -12,7 +12,7 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
 app.use(cors({
   origin: allowedOrigins.length > 0 ? allowedOrigins : false,
   methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Test-Actor'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
   exposedHeaders: ['X-Request-Id'],
   credentials: true,
   maxAge: 86400

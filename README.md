@@ -41,6 +41,24 @@ npm start
 
 Server starts on `http://localhost:3000`.
 
+### Generate a token for manual testing
+
+All endpoints require a `Bearer` JWT. To mint a short-lived admin token for local testing:
+
+```bash
+node -e "
+  const jwt = require('jsonwebtoken');
+  require('dotenv').config({ path: './.env' });
+  console.log(jwt.sign({ sub: 'local-admin', role: 'ADMIN' }, process.env.JWT_SECRET, { expiresIn: '1d' }));
+"
+```
+
+Export it so you can paste it into the curl examples below:
+
+```bash
+export TOKEN=<paste token here>
+```
+
 ### Run tests
 
 ```bash
@@ -69,15 +87,17 @@ Tests spin up an in-memory MongoDB replica set automatically — no external dat
 
 ### Claims
 
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/claims` | Submit a claim |
-| `GET` | `/claims/:id` | Get claim + current decisions |
-| `GET` | `/claims/:id/decisions` | Full decision history (audit trail) |
-| `POST` | `/claims/:id/review` | Trigger adjudication |
-| `POST` | `/claims/:id/pay` | Mark as paid |
-| `POST` | `/claims/:id/dispute` | Member disputes a decision |
-| `POST` | `/claims/:id/reprocess` | Re-adjudicate (appeal / rule correction) |
+| Method | Path | Roles | Description |
+|---|---|---|---|
+| `POST` | `/claims` | MEMBER, ADJUSTER, ADMIN | Submit a claim |
+| `GET` | `/claims/:id` | any | Get claim + current decisions (PHI filtered by role) |
+| `GET` | `/claims/:id/decisions` | ADJUSTER, ADMIN, AUDITOR | Full decision history (audit trail) |
+| `POST` | `/claims/:id/review` | ADJUSTER, ADMIN | Trigger adjudication |
+| `POST` | `/claims/:id/pay` | ADMIN | Mark as paid |
+| `POST` | `/claims/:id/dispute` | MEMBER, ADMIN | Member disputes a decision |
+| `POST` | `/claims/:id/dispute/resolve` | ADJUSTER, ADMIN | Resolve dispute (UPHELD / REVERSED / WITHDRAWN) |
+| `POST` | `/claims/:id/items/:itemId/adjudicate` | ADJUSTER, ADMIN | Manually adjudicate a NEEDS_REVIEW item |
+| `POST` | `/claims/:id/reprocess` | ADJUSTER, ADMIN | Re-adjudicate (appeal / rule correction) |
 
 ## Walkthrough
 
@@ -87,16 +107,19 @@ Tests spin up an in-memory MongoDB replica set automatically — no external dat
 # Create member
 curl -X POST http://localhost:3000/members \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"name":"Jane Doe","dateOfBirth":"1985-03-15","memberId":"MBR-001"}'
 
 # Create policy (use memberId from above)
 curl -X POST http://localhost:3000/policies \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"memberId":"<memberId>","planType":"STANDARD","effectiveDate":"2024-01-01"}'
 
 # Add coverage rules (use policyId from above)
 curl -X POST http://localhost:3000/policies/<policyId>/versions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "effectiveFrom": "2024-01-01",
     "coverageRules": [
@@ -105,14 +128,14 @@ curl -X POST http://localhost:3000/policies/<policyId>/versions \
         "serviceTypes": [],
         "coveredPercent": 80,
         "annualLimit": 10000,
-        "deductible": 500
+        "annualDeductible": 500
       },
       {
         "benefitCategory": "DENTAL",
         "serviceTypes": [],
         "coveredPercent": 50,
         "annualLimit": 2000,
-        "deductible": 0
+        "annualDeductible": 0
       }
     ]
   }'
@@ -121,9 +144,10 @@ curl -X POST http://localhost:3000/policies/<policyId>/versions \
 ### 2. Submit and adjudicate a claim
 
 ```bash
-# Submit claim
+# Submit claim (use a MEMBER-role token so ownership is enforced)
 curl -X POST http://localhost:3000/claims \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "memberId": "<memberId>",
     "policyId": "<policyId>",
@@ -136,26 +160,33 @@ curl -X POST http://localhost:3000/claims \
     ]
   }'
 
-# Adjudicate (use claimId from above)
-curl -X POST http://localhost:3000/claims/<claimId>/review
+# Adjudicate (ADJUSTER or ADMIN token required)
+curl -X POST http://localhost:3000/claims/<claimId>/review \
+  -H "Authorization: Bearer $TOKEN"
 
-# Read the decision with explanation
-curl http://localhost:3000/claims/<claimId>
+# Read the decision with explanation (diagnosisCodes stripped for non-clinical roles)
+curl http://localhost:3000/claims/<claimId> \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ### 3. Dispute and reprocess
 
 ```bash
+# Member disputes (use a MEMBER-role token)
 curl -X POST http://localhost:3000/claims/<claimId>/dispute \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{"reason":"Deductible was already met — request re-review"}'
 
-curl -X POST http://localhost:3000/claims/<claimId>/reprocess \
+# Adjuster resolves the dispute (UPHELD keeps original; REVERSED auto-reprocesses)
+curl -X POST http://localhost:3000/claims/<claimId>/dispute/resolve \
   -H "Content-Type: application/json" \
-  -d '{"triggeringEvent":"APPEAL"}'
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"decision":"REVERSED","resolution":"Error in deductible application identified."}'
 
-# See the full decision history including superseded decisions
-curl http://localhost:3000/claims/<claimId>/decisions
+# See the full decision history including superseded decisions (ADJUSTER/ADMIN/AUDITOR only)
+curl http://localhost:3000/claims/<claimId>/decisions \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ### 4. Mid-year rule change
@@ -164,11 +195,12 @@ curl http://localhost:3000/claims/<claimId>/decisions
 # Add a new policy version with updated rules (closes the old version automatically)
 curl -X POST http://localhost:3000/policies/<policyId>/versions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
   -d '{
     "effectiveFrom": "2024-07-01",
     "changeReason": "Annual benefit renewal",
     "coverageRules": [
-      {"benefitCategory":"MEDICAL","serviceTypes":[],"coveredPercent":90,"annualLimit":15000,"deductible":250}
+      {"benefitCategory":"MEDICAL","serviceTypes":[],"coveredPercent":90,"annualLimit":15000,"annualDeductible":250}
     ]
   }'
 

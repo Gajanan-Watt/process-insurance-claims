@@ -14,11 +14,17 @@
 
 **Dispute → reprocess flow** — members can dispute, which moves to `DISPUTED`, and a subsequent `/reprocess` releases old limit consumption, resets item statuses, and re-adjudicates.
 
+**Dispute resolution** — adjusters can resolve disputes via `POST /claims/:id/dispute/resolve` with `UPHELD`, `REVERSED`, or `WITHDRAWN`. `REVERSED` automatically triggers reprocessing, creating a new superseding decision chain. This replaces the manual two-step dispute-then-reprocess flow.
+
+**Annual deductible accumulator** — `DeductibleLedger` tracks deductible consumption per `(policy, member, benefitCategory, calendar year)` using the same append-only APPLY/RELEASE pattern as `LimitLedger`. The correct formula is applied: deductible is consumed first, coverage percent applied to the remainder. Once met, subsequent claims in the same year skip the deductible entirely.
+
+**NEEDS_REVIEW routing** — coverage rules with `requiresManualReview=true` route items to a `NEEDS_REVIEW` decision instead of auto-approving or auto-denying. Adjusters manually resolve these via `POST /claims/:id/items/:itemId/adjudicate`. The claim holds in `UNDER_REVIEW` until all such items are resolved.
+
+**JWT authentication** — all endpoints require a `Bearer` token. Role-based access control gates write operations by role (`MEMBER`, `ADJUSTER`, `ADMIN`, `AUDITOR`). PHI is filtered per caller role: `diagnosisCodes` are stripped for non-clinical roles, and `MENTAL_HEALTH` decision details are redacted for members.
+
 ---
 
 ## What I did not build
-
-**Deductible accumulator** — the `deductible` field on coverage rules is applied per-claim, not tracked as a running annual accumulator. Real insurance applies the deductible once per year, then covers 100% (or the coverage percent) after. This simplification means the system overapplies deductibles for members who've already met their annual deductible through other claims. Fixing this would require a `DeductibleLedger` analogous to `LimitLedger`.
 
 **Pre-authorization tracking** — claims for services requiring pre-auth are denied with a `REQUIRES_PRE_AUTH` code. There's no workflow to record that pre-auth was obtained and re-adjudicate. That would need a `PreAuthRecord` entity and an additional claim state.
 
@@ -28,9 +34,7 @@
 
 **Financial reversal after PAID** — once a claim is paid, reprocessing is blocked. A real system would need a financial adjustment flow that credits/debits the difference and creates a corrected payment record.
 
-**Pagination** — no pagination on list endpoints.
-
-**Auth** — out of scope per the assignment.
+**Pagination** — list and history endpoints return all results. A cursor-based pagination scheme (keying on `_id`) would be the right approach for `GET /claims/:id/decisions` on long-lived claims.
 
 ---
 
@@ -40,7 +44,7 @@
 
 2. **Date of service determines rule version** — coverage rules active on `dateOfService` apply, regardless of when the claim was submitted or adjudicated.
 
-3. **Deductible applies before coverage percent** — the calculation is `billedAmount × coveredPercent% - deductible`. Some plans apply the deductible first then apply the coverage percent; this implementation does it the other way. The code is easy to change but the choice needs domain input.
+3. **Deductible applies before coverage percent** — the correct insurance formula is applied: `eligibleAmount = billedAmount - deductibleApplied`, then `approvedAmount = eligibleAmount × coveredPercent%`. This matches standard plan documents where the member absorbs the deductible first, then shares the remaining cost at the coverage split.
 
 4. **Service type matching** — an empty `serviceTypes` array on a coverage rule means it applies to all service types in that benefit category. Specific service type codes take precedence only if listed.
 

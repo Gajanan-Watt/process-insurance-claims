@@ -26,6 +26,10 @@ function errorHandler(err, req, res, next) {
     return res.status(409).json({ requestId, error: 'Duplicate entry' });
   }
 
+  if (err.name === 'CastError') {
+    return res.status(400).json({ requestId, error: 'Invalid identifier format' });
+  }
+
   // For 5xx errors return a generic message; for 4xx return the operational message
   // (state machine errors, not-found etc. — none of which contain PHI).
   const clientMessage = status >= 500 ? 'An internal error occurred' : err.message;
