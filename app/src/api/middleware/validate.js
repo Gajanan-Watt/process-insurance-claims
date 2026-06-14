@@ -6,7 +6,7 @@ const claimItemSchema = z.object({
   serviceType: z.string().min(1),
   benefitCategory: z.enum(BENEFIT_CATEGORIES),
   billedAmount: z.number().positive(),
-  description: z.string().optional()
+  description: z.string().max(500).optional()
 });
 
 const claimSubmissionSchema = z.object({
@@ -19,13 +19,21 @@ const claimSubmissionSchema = z.object({
   items: z.array(claimItemSchema).min(1, 'At least one item required')
 });
 
+const memberCreationSchema = z.object({
+  name: z.string().min(1).max(200),
+  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'dateOfBirth must be YYYY-MM-DD'),
+  memberId: z.string().min(1).max(50),
+  policyId: z.string().min(1).optional()
+});
+
 const coverageRuleSchema = z.object({
   benefitCategory: z.enum(BENEFIT_CATEGORIES),
   serviceTypes: z.array(z.string()).default([]),
   coveredPercent: z.number().min(0).max(100),
   annualLimit: z.number().positive(),
-  deductible: z.number().min(0).default(0),
-  requiresPreAuth: z.boolean().default(false)
+  annualDeductible: z.number().min(0).default(0),
+  requiresPreAuth: z.boolean().default(false),
+  requiresManualReview: z.boolean().default(false)
 });
 
 const policyVersionSchema = z.object({
@@ -51,5 +59,6 @@ function validate(schema) {
 
 module.exports = {
   validateClaimSubmission: validate(claimSubmissionSchema),
+  validateMemberCreation: validate(memberCreationSchema),
   validatePolicyVersion: validate(policyVersionSchema)
 };

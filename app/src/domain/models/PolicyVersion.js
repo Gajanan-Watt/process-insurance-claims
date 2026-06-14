@@ -8,8 +8,10 @@ const coverageRuleSchema = new mongoose.Schema({
   serviceTypes: [String],
   coveredPercent: { type: Number, required: true, min: 0, max: 100 },
   annualLimit: { type: Number, required: true, min: 0 },
-  deductible: { type: Number, default: 0, min: 0 },
-  requiresPreAuth: { type: Boolean, default: false }
+  annualDeductible: { type: Number, default: 0, min: 0 },
+  requiresPreAuth: { type: Boolean, default: false },
+  // When true, item is routed to manual adjudication queue instead of auto-approved/denied
+  requiresManualReview: { type: Boolean, default: false }
 }, { _id: false });
 
 const policyVersionSchema = new mongoose.Schema({
