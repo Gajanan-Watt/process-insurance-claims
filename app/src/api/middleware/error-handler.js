@@ -1,25 +1,35 @@
 function errorHandler(err, req, res, next) {
+  const requestId = req.requestId;
   const status = err.statusCode || err.status || 500;
-  const message = err.message || 'Internal server error';
 
   if (process.env.NODE_ENV !== 'test') {
-    console.error(`[${status}] ${message}`, err.stack);
+    // Full error details go server-side only — never expose stack traces or internal IDs to callers.
+    process.stderr.write(JSON.stringify({
+      requestId,
+      status,
+      actorId: req.actor?.id,
+      actorRole: req.actor?.role,
+      message: err.message,
+      stack: err.stack
+    }) + '\n');
   }
 
-  // Mongoose validation errors
   if (err.name === 'ValidationError') {
     return res.status(400).json({
+      requestId,
       error: 'Validation failed',
       details: Object.values(err.errors).map(e => e.message)
     });
   }
 
-  // Mongoose duplicate key
   if (err.code === 11000) {
-    return res.status(409).json({ error: 'Duplicate entry', details: err.keyValue });
+    return res.status(409).json({ requestId, error: 'Duplicate entry' });
   }
 
-  res.status(status).json({ error: message });
+  // For 5xx errors return a generic message; for 4xx return the operational message
+  // (state machine errors, not-found etc. — none of which contain PHI).
+  const clientMessage = status >= 500 ? 'An internal error occurred' : err.message;
+  res.status(status).json({ requestId, error: clientMessage });
 }
 
 module.exports = errorHandler;
