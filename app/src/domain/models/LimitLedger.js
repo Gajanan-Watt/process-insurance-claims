@@ -5,13 +5,14 @@ const mongoose = require('mongoose');
 // RELEASE: reversal of a prior CONSUME (reprocessing or denial override).
 const ENTRY_TYPES = ['CONSUME', 'RELEASE'];
 
+// Each entry has its own _id so individual consumptions can be referenced in audit records.
 const ledgerEntrySchema = new mongoose.Schema({
   claimId: { type: mongoose.Schema.Types.ObjectId, ref: 'Claim', required: true },
   claimItemId: { type: mongoose.Schema.Types.ObjectId, required: true },
   type: { type: String, enum: ENTRY_TYPES, required: true },
   amount: { type: Number, required: true, min: 0 },
   recordedAt: { type: Date, default: Date.now }
-}, { _id: false });
+});
 
 const limitLedgerSchema = new mongoose.Schema({
   policyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Policy', required: true },

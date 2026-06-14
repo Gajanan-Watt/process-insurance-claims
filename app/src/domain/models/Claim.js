@@ -10,7 +10,7 @@ const CLAIM_STATUSES = [
   'DISPUTED'
 ];
 
-const ITEM_STATUSES = ['PENDING', 'APPROVED', 'DENIED', 'NEEDS_REVIEW'];
+const ITEM_STATUSES = ['PENDING', 'APPROVED', 'PARTIALLY_APPROVED', 'DENIED', 'NEEDS_REVIEW'];
 
 const claimItemSchema = new mongoose.Schema({
   serviceType: { type: String, required: true },
@@ -20,7 +20,7 @@ const claimItemSchema = new mongoose.Schema({
     enum: ['MEDICAL', 'DENTAL', 'VISION', 'MENTAL_HEALTH', 'PRESCRIPTION']
   },
   billedAmount: { type: Number, required: true, min: 0 },
-  description: { type: String },
+  description: { type: String, maxlength: 500 },
   status: { type: String, enum: ITEM_STATUSES, default: 'PENDING' }
 }, { timestamps: true });
 
@@ -35,8 +35,8 @@ const claimSchema = new mongoose.Schema({
   diagnosisCodes: [String],
   status: { type: String, enum: CLAIM_STATUSES, default: 'SUBMITTED' },
   items: { type: [claimItemSchema], required: true, validate: v => v.length > 0 },
-  // Preserved when a dispute triggers reprocessing
-  disputeReason: { type: String }
+  // Points to the active Dispute document; null when no dispute is in flight
+  activeDisputeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Dispute', default: null }
 }, { timestamps: true });
 
 claimSchema.index({ memberId: 1, status: 1 });
